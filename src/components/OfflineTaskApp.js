@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../db/db';
 import { useTaskStore } from '../hooks/useTaskStore';
-import { Cloud, CloudOff, Save, CheckCircle } from 'lucide-react';
+import { Cloud, CloudOff, Save } from 'lucide-react';
 
 const OfflineTaskApp = () => {
   const [task, setTask] = useState('');
@@ -9,8 +9,30 @@ const OfflineTaskApp = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const { logs, addLog } = useTaskStore();
 
+  const loadTasks = useCallback(async () => {
+    const allTasks = await db.tasks.toArray();
+    setTasks(allTasks);
+  }, []);
+
+  const syncTasks = useCallback(async () => {
+    const pendingTasks = await db.tasks.where('status').equals('pending').toArray();
+    if (pendingTasks.length === 0) {
+      addLog('No pending tasks to sync.');
+      return;
+    }
+
+    addLog(`Syncing ${pendingTasks.length} tasks...`);
+
+    for (const t of pendingTasks) {
+      await new Promise(res => setTimeout(res, 500));
+      await db.tasks.update(t.id, { status: 'synced' });
+    }
+
+    addLog('All tasks successfully synced to Cloud! ✅');
+    loadTasks();
+  }, [addLog, loadTasks]);
+
   useEffect(() => {
-    // Sync network status
     const handleOnline = () => {
       setIsOnline(true);
       addLog('Network restored. Starting Sync...');
@@ -29,12 +51,7 @@ const OfflineTaskApp = () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
-
-  const loadTasks = async () => {
-    const allTasks = await db.tasks.toArray();
-    setTasks(allTasks);
-  };
+  }, [addLog, syncTasks, loadTasks]);
 
   const addTask = async (e) => {
     e.preventDefault();
@@ -52,28 +69,8 @@ const OfflineTaskApp = () => {
     loadTasks();
   };
 
-  const syncTasks = async () => {
-    const pendingTasks = await db.tasks.where('status').equals('pending').toArray();
-    if (pendingTasks.length === 0) {
-      addLog('No pending tasks to sync.');
-      return;
-    }
-
-    addLog(`Syncing ${pendingTasks.length} tasks...`);
-
-    // Simulate API call
-    for (const t of pendingTasks) {
-      await new Promise(res => setTimeout(res, 500)); // Simulate network delay
-      await db.tasks.update(t.id, { status: 'synced' });
-    }
-
-    addLog('All tasks successfully synced to Cloud! ✅');
-    loadTasks();
-  };
-
   return (
     <div className="flex h-screen bg-slate-50 font-sans">
-      {/* Main App Area */}
       <div className="flex-1 p-8 overflow-y-auto">
         <div className="max-w-2xl mx-auto">
           <header className="flex justify-between items-center mb-8">
@@ -113,7 +110,6 @@ const OfflineTaskApp = () => {
         </div>
       </div>
 
-      {/* Technical Log Sidebar - The "Wow" factor for the CTO */}
       <div className="w-80 bg-slate-900 text-emerald-400 p-6 font-mono text-xs overflow-y-auto shadow-2xl">
         <h2 className="text-slate-400 uppercase font-bold mb-4 border-b border-slate-700 pb-2">Technical Sync Log</h2>
         <div className="space-y-2">
